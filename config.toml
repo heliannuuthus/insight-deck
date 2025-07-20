@@ -1,0 +1,22 @@
+[arxiv]
+model_name = "gemini-embedding-001"
+max_results = 100
+
+
+[arxiv.interests.methods]
+diffusion = 0.2
+transformer = 0.3
+RL = 0.4
+LLM = 0.5
+tokenizer = 0.6
+
+[arxiv.interests.applications]
+robotics = 0.3
+code_generation = 0.4
+reasoning = 0.5
+
+[arxiv.interests.domains]
+AI = 0.5
+machine_learning = 0.6
+planning = 0.7
+autonomous = 0.8
