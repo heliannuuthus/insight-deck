@@ -5,11 +5,14 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "aiostream>=0.7.0",
     "dynaconf>=3.2.11",
     "fastapi[standard]>=0.116.1",
     "feedparser>=6.0.11",
     "httpx>=0.28.1",
+    "langchain-community>=0.3.27",
     "langchain-google-genai>=2.1.8",
     "langchain[google-genai]>=0.3.26",
     "python-dotenv>=1.1.1",
+    "simsimd>=6.5.0",
 ]

@@ -20,3 +20,7 @@ AI = 0.5
 machine_learning = 0.6
 planning = 0.7
 autonomous = 0.8
+
+[logging]
+level = "INFO"
+config_path = "logging.yaml"
