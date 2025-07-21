@@ -4,7 +4,7 @@ from typing import Dict, List, Tuple
 
 from dynaconf import Dynaconf
 
-__config = Dynaconf(settings_files=["config.toml"], )
+__config = Dynaconf(settings_files=["config.toml"],)
 
 
 def get_global_config() -> Dynaconf:

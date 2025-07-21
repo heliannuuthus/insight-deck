@@ -1,13 +1,20 @@
-from datetime import datetime, timedelta
-from fastapi import APIRouter, Query
-from logging import getLogger
 import asyncio
+from datetime import datetime, timedelta
+from logging import getLogger
+from typing import Tuple
+
+from fastapi import APIRouter, Query
+
+from insightdeck.arxiv.agent import Result, Score, compute_article_score
+from insightdeck.arxiv.client import (
+    Category,
+    Client,
+    Search,
+    SortCriterion,
+    SortOrder,
+)
 
 logger = getLogger(__name__)
-
-from insightdeck.arxiv.agent import compute_article_score
-from insightdeck.arxiv.client import Client, Category, Search, SortCriterion, SortOrder
-
 router = APIRouter()
 
 
@@ -16,7 +23,6 @@ async def get_arxiv_articles(
         categories: list[Category] = Query(),
         max_results: int = Query(default=800),
 ):
-
     logger.info(
         f"Getting articles for categories: {categories}, max_results: {max_results}"
     )
@@ -26,22 +32,28 @@ async def get_arxiv_articles(
     this_monday = today - timedelta(days=today.weekday())
     last_monday = this_monday - timedelta(days=7)
     last_sunday = last_monday + timedelta(days=6)
-    query += f" AND submittedDate:[{last_monday.strftime('%Y%m%d%2000')} TO {last_sunday.strftime('%Y%m%d%19:59')}]"
+    query += f" AND submittedDate:[{last_monday.strftime('%Y%m%d2000')} TO {last_sunday.strftime('%Y%m%d1959')}]"
+    scored = await asyncio.gather(
+        *[
+            asyncio.to_thread(compute_article_score, r)
+            async for r in Client(page_size=max_results).results(
+                Search(
+                    query=query,
+                    max_results=max_results,
+                    sort_by=SortCriterion.SubmittedDate,
+                    sort_order=SortOrder.Descending,
+                ))
+        ],
+        return_exceptions=True,
+    )
 
-    results = []
-    # 并发收集全部文章（拉取本身是串行的，只能先这样）
-    async for result in Client(page_size=max_results).results(
-        Search(query=query,
-               max_results=max_results,
-               sort_by=SortCriterion.SubmittedDate,
-               sort_order=SortOrder.Descending)):
-        results.append(result)
+    def process_result(result: Tuple[Result, Score] | Exception,) -> float:
+        if isinstance(result, Exception):
+            logger.error(f"error processing article: {result[0].title}")
+            return 0
+        logger.info(f"processed article: {result[0].title}")
+        return result[1].average_score
 
-    # 并发处理文章打分
-    async def score_article(article):
-        return compute_article_score(article)
-
-    scored = await asyncio.gather(*(score_article(r) for r in results))
-    scored.sort(key=lambda x: x["average_score"], reverse=True)
+    scored.sort(key=process_result, reverse=True)
     logger.info(f"scored: {scored}")
     return scored[:10]
