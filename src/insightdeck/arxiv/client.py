@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import itertools
 import logging
 import math
 import os
@@ -13,10 +12,10 @@ from enum import Enum
 from typing import AsyncGenerator, AsyncIterator, Dict, List, Optional
 from urllib.parse import urlencode, urlparse
 from urllib.request import urlretrieve
-from aiostream import stream, core
-import aiostream
+
 import feedparser
 import httpx
+from aiostream import stream
 
 logger = logging.getLogger(__name__)
 
@@ -131,9 +130,7 @@ class Result(object):
             updated=Result._to_datetime(entry.updated_parsed),
             published=Result._to_datetime(entry.published_parsed),
             title=re.sub(r"\s+", " ", title),
-            authors=[
-                Result.Author._from_feed_author(a) for a in entry.authors
-            ],
+            authors=[Result.Author._from_feed_author(a) for a in entry.authors],
             summary=entry.summary,
             comment=entry.get("arxiv_comment"),
             journal_ref=entry.get("arxiv_journal_ref"),
@@ -596,9 +593,7 @@ class Client(object):
             repr(self.num_retries),
         )
 
-    def results(self,
-                search: Search,
-                offset: int = 0) -> AsyncIterator[Result]:
+    def results(self, search: Search, offset: int = 0) -> AsyncIterator[Result]:
         """
         Uses this client configuration to fetch one page of the search results
         at a time, yielding the parsed `Result`s, until `max_results` results
@@ -616,8 +611,7 @@ class Client(object):
         limit = search.max_results - offset if search.max_results else None
         if limit and limit < 0:
             return stream.iterate(iter(()))
-        return stream.take(stream.iterate(self._results(search, offset)),
-                           limit).stream()
+        return stream.take(stream.iterate(self._results(search, offset)), limit)
 
     async def _results(self,
                        search: Search,
@@ -707,8 +701,8 @@ class Client(object):
 
         logger.info("Requesting page (first: %r, try: %d): %s", first_page,
                     try_index, url)
-        resp = await self._session.get(
-            url, headers={"user-agent": "arxiv.py/2.2.0"})
+        resp = await self._session.get(url,
+                                       headers={"user-agent": "arxiv.py/2.2.0"})
         self._last_request_dt = datetime.now()
         if resp.status_code != httpx.codes.OK:
             raise HTTPError(url, try_index, resp.status_code)
