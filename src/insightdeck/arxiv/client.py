@@ -10,10 +10,11 @@ import warnings
 from calendar import timegm
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import AsyncGenerator, Dict, List, Optional
+from typing import AsyncGenerator, AsyncIterator, Dict, List, Optional
 from urllib.parse import urlencode, urlparse
 from urllib.request import urlretrieve
-
+from aiostream import stream, core
+import aiostream
 import feedparser
 import httpx
 
@@ -123,14 +124,16 @@ class Result(object):
             title = entry.title
         else:
             logger.warning(
-                "Result %s is missing title attribute; defaulting to '0'", entry.id
-            )
+                "Result %s is missing title attribute; defaulting to '0'",
+                entry.id)
         return Result(
             entry_id=entry.id,
             updated=Result._to_datetime(entry.updated_parsed),
             published=Result._to_datetime(entry.published_parsed),
             title=re.sub(r"\s+", " ", title),
-            authors=[Result.Author._from_feed_author(a) for a in entry.authors],
+            authors=[
+                Result.Author._from_feed_author(a) for a in entry.authors
+            ],
             summary=entry.summary,
             comment=entry.get("arxiv_comment"),
             journal_ref=entry.get("arxiv_journal_ref"),
@@ -148,22 +151,21 @@ class Result(object):
         return (
             "{}(entry_id={}, updated={}, published={}, title={}, authors={}, "
             "summary={}, comment={}, journal_ref={}, doi={}, "
-            "primary_category={}, categories={}, links={})"
-        ).format(
-            _classname(self),
-            repr(self.entry_id),
-            repr(self.updated),
-            repr(self.published),
-            repr(self.title),
-            repr(self.authors),
-            repr(self.summary),
-            repr(self.comment),
-            repr(self.journal_ref),
-            repr(self.doi),
-            repr(self.primary_category),
-            repr(self.categories),
-            repr(self.links),
-        )
+            "primary_category={}, categories={}, links={})").format(
+                _classname(self),
+                repr(self.entry_id),
+                repr(self.updated),
+                repr(self.published),
+                repr(self.title),
+                repr(self.authors),
+                repr(self.summary),
+                repr(self.comment),
+                repr(self.journal_ref),
+                repr(self.doi),
+                repr(self.primary_category),
+                repr(self.categories),
+                repr(self.links),
+            )
 
     def __eq__(self, other) -> bool:
         if isinstance(other, Result):
@@ -192,13 +194,11 @@ class Result(object):
         A default `to_filename` function for the extension given.
         """
         nonempty_title = self.title if self.title else "UNTITLED"
-        return ".".join(
-            [
-                self.get_short_id().replace("/", "_"),
-                re.sub(r"[^\w]", "_", nonempty_title),
-                extension,
-            ]
-        )
+        return ".".join([
+            self.get_short_id().replace("/", "_"),
+            re.sub(r"[^\w]", "_", nonempty_title),
+            extension,
+        ])
 
     def download_pdf(
         self,
@@ -250,7 +250,8 @@ class Result(object):
         if len(pdf_urls) == 0:
             return None
         elif len(pdf_urls) > 1:
-            logger.warning("Result has multiple PDF links; using %s", pdf_urls[0])
+            logger.warning("Result has multiple PDF links; using %s",
+                           pdf_urls[0])
         return pdf_urls[0]
 
     def _to_datetime(ts: time.struct_time) -> datetime:
@@ -288,7 +289,8 @@ class Result(object):
             """
             self.name = name
 
-        def _from_feed_author(feed_author: feedparser.FeedParserDict) -> Result.Author:
+        def _from_feed_author(
+                feed_author: feedparser.FeedParserDict) -> Result.Author:
             """
             Constructs an `Author` with the name specified in an author object
             from a feed entry.
@@ -340,7 +342,8 @@ class Result(object):
             self.rel = rel
             self.content_type = content_type
 
-        def _from_feed_link(feed_link: feedparser.FeedParserDict) -> Result.Link:
+        def _from_feed_link(
+                feed_link: feedparser.FeedParserDict) -> Result.Link:
             """
             Constructs a `Link` with link metadata specified in a link object
             from a feed entry.
@@ -415,6 +418,19 @@ class SortOrder(Enum):
 
     Ascending = "ascending"
     Descending = "descending"
+
+
+class Category(Enum):
+    """
+    A Category identifies a category of arXiv articles.
+    """
+
+    ArtificialIntelligence = "cs.AI"
+    ComputerGraphics = "cs.GR"
+    MachineLearning = "cs.LG"
+    NaturalLanguageProcessing = "cs.CL"
+    Robotics = "cs.RO"
+    ComputerVision = "cs.CV"
 
 
 class Search(object):
@@ -550,9 +566,10 @@ class Client(object):
     _last_request_dt: datetime
     _session: httpx.AsyncClient
 
-    def __init__(
-        self, page_size: int = 100, delay_seconds: float = 3.0, num_retries: int = 3
-    ):
+    def __init__(self,
+                 page_size: int = 100,
+                 delay_seconds: float = 3.0,
+                 num_retries: int = 3):
         """
         Constructs an arXiv API client with the specified options.
 
@@ -579,9 +596,9 @@ class Client(object):
             repr(self.num_retries),
         )
 
-    async def results(
-        self, search: Search, offset: int = 0
-    ) -> AsyncGenerator[Result, None]:
+    def results(self,
+                search: Search,
+                offset: int = 0) -> AsyncIterator[Result]:
         """
         Uses this client configuration to fetch one page of the search results
         at a time, yielding the parsed `Result`s, until `max_results` results
@@ -598,12 +615,13 @@ class Client(object):
         """
         limit = search.max_results - offset if search.max_results else None
         if limit and limit < 0:
-            return iter(())
-        return itertools.islice(self._results(search, offset), limit)
+            return stream.iterate(iter(()))
+        return stream.take(stream.iterate(self._results(search, offset)),
+                           limit).stream()
 
-    async def _results(
-        self, search: Search, offset: int = 0
-    ) -> AsyncGenerator[Result, None]:
+    async def _results(self,
+                       search: Search,
+                       offset: int = 0) -> AsyncGenerator[Result, None]:
         page_url = self._format_url(search, offset, self.page_size)
         feed = await self._parse_feed(page_url, first_page=True)
         if not feed.entries:
@@ -634,17 +652,16 @@ class Client(object):
         results starting with the result at index `start`.
         """
         url_args = search._url_args()
-        url_args.update(
-            {
-                "start": start,
-                "max_results": page_size,
-            }
-        )
+        url_args.update({
+            "start": start,
+            "max_results": page_size,
+        })
         return self.query_url_format.format(urlencode(url_args))
 
-    async def _parse_feed(
-        self, url: str, first_page: bool = True, _try_index: int = 0
-    ) -> feedparser.FeedParserDict:
+    async def _parse_feed(self,
+                          url: str,
+                          first_page: bool = True,
+                          _try_index: int = 0) -> feedparser.FeedParserDict:
         """
         Fetches the specified URL and parses it with feedparser.
 
@@ -652,19 +669,19 @@ class Client(object):
         `self.num_retries` times.
         """
         try:
-            return self.__try_parse_feed(
-                url, first_page=first_page, try_index=_try_index
-            )
+            return await self.__try_parse_feed(url,
+                                               first_page=first_page,
+                                               try_index=_try_index)
         except (
-            HTTPError,
-            UnexpectedEmptyPageError,
-            httpx.ConnectError,
+                HTTPError,
+                UnexpectedEmptyPageError,
+                httpx.ConnectError,
         ) as err:
             if _try_index < self.num_retries:
                 logger.debug("Got error (try %d): %s", _try_index, err)
-                return await self._parse_feed(
-                    url, first_page=first_page, _try_index=_try_index + 1
-                )
+                return await self._parse_feed(url,
+                                              first_page=first_page,
+                                              _try_index=_try_index + 1)
             logger.debug("Giving up (try %d): %s", _try_index, err)
             raise err
 
@@ -688,11 +705,10 @@ class Client(object):
                 logger.info("Sleeping: %f seconds", to_sleep)
                 time.sleep(to_sleep)
 
-        logger.info(
-            "Requesting page (first: %r, try: %d): %s", first_page, try_index, url
-        )
-
-        resp = await self._session.get(url, headers={"user-agent": "arxiv.py/2.2.0"})
+        logger.info("Requesting page (first: %r, try: %d): %s", first_page,
+                    try_index, url)
+        resp = await self._session.get(
+            url, headers={"user-agent": "arxiv.py/2.2.0"})
         self._last_request_dt = datetime.now()
         if resp.status_code != httpx.codes.OK:
             raise HTTPError(url, try_index, resp.status_code)
@@ -752,7 +768,8 @@ class UnexpectedEmptyPageError(ArxivError):
     diagnostic information, e.g. in 'bozo_exception'.
     """
 
-    def __init__(self, url: str, retry: int, raw_feed: feedparser.FeedParserDict):
+    def __init__(self, url: str, retry: int,
+                 raw_feed: feedparser.FeedParserDict):
         """
         Constructs an `UnexpectedEmptyPageError` encountered for the specified
         API URL after `retry` tries.
@@ -762,9 +779,8 @@ class UnexpectedEmptyPageError(ArxivError):
         super().__init__(url, retry, "Page of results was unexpectedly empty")
 
     def __repr__(self) -> str:
-        return "{}({}, {}, {})".format(
-            _classname(self), repr(self.url), repr(self.retry), repr(self.raw_feed)
-        )
+        return "{}({}, {}, {})".format(_classname(self), repr(self.url),
+                                       repr(self.retry), repr(self.raw_feed))
 
 
 class HTTPError(ArxivError):
@@ -791,9 +807,8 @@ class HTTPError(ArxivError):
         )
 
     def __repr__(self) -> str:
-        return "{}({}, {}, {})".format(
-            _classname(self), repr(self.url), repr(self.retry), repr(self.status)
-        )
+        return "{}({}, {}, {})".format(_classname(self), repr(self.url),
+                                       repr(self.retry), repr(self.status))
 
 
 def _classname(o):

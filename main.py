@@ -1,20 +1,25 @@
+import logging
 from dotenv import load_dotenv
-from fastapi import FastAPI
-
-from internal.logging import setup_logging
 
 load_dotenv()
+from fastapi import FastAPI
+from insightdeck import arxiv_router
 
-setup_logging()
+from internal import setup_logging, get_global_config
+
+setup_logging(get_global_config().logging.config_path)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+app.include_router(arxiv_router)
 
-def run():
+
+def start():
     import uvicorn
-
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    logger.info("Starting server")
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
 
 
 if __name__ == "__main__":
-    run()
+    start()
